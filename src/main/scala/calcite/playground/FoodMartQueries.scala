@@ -6,25 +6,70 @@ import org.apache.calcite.schema.SchemaPlus
 import org.apache.calcite.sql.fun.SqlStdOperatorTable
 import org.apache.calcite.tools.{FrameworkConfig, Frameworks, RelBuilder}
 
-trait FoodMartQueries {
+class FoodMartQueries(schema: SchemaPlus) {
   private def builderConfig(schema: SchemaPlus): FrameworkConfig =
     Frameworks
       .newConfigBuilder()
       .defaultSchema(schema)
       .build()
 
-  def sumInCity(schema: SchemaPlus, cityName: String): RelNode = {
-    val builder = RelBuilder.create(builderConfig(schema))
+  private val builder = RelBuilder.create(builderConfig(schema))
 
+  private def customersFromCity(cityName: String) =
     builder
       .scan("customer")
-      .filter(builder.call(SqlStdOperatorTable.EQUALS, builder.field("city"), builder.literal(cityName)))
+      .scan("region")
+      .filter(builder.call(SqlStdOperatorTable.EQUALS, builder.field("sales_city"), builder.literal(cityName)))
+      .join(JoinRelType.INNER, builder.call(
+        SqlStdOperatorTable.EQUALS,
+        builder.field(2, "customer", "customer_region_id"),
+        builder.field(2, "region", "region_id")
+      ))
+      .build()
+
+  def sumInCity(cityName: String): RelNode = {
+    builder
+      .push(customersFromCity(cityName))
       .scan("sales_fact_1998")
       .join(JoinRelType.INNER, "customer_id")
       .aggregate(
         builder.groupKey(),
         builder.sum(builder.field("unit_sales"))
       )
+      .build()
+  }
+
+  def drillInCity(cityName: String): RelNode = {
+    val withTimes = builder
+        .scan("sales_fact_1998")
+        .scan("time_by_day")
+        .join(JoinRelType.INNER, "time_id")
+        .build()
+
+    builder
+      .push(customersFromCity(cityName))
+      .push(withTimes)
+      .join(JoinRelType.INNER, "customer_id")
+      .aggregate(
+        builder.groupKey("month_of_year"),
+        builder.sum(false, "sales_sum", builder.field("unit_sales"))
+      )
+      .sort(builder.field("month_of_year"))
+      .project(builder.field("month_of_year"), builder.field("sales_sum"))
+      .build()
+  }
+
+  def topInCity(cityName: String, limit: Int): RelNode = {
+    builder
+      .push(customersFromCity(cityName))
+      .scan("sales_fact_1998")
+      .join(JoinRelType.INNER, "customer_id")
+      .aggregate(
+        builder.groupKey("customer_id", "fullname"),
+        builder.sum(false, "sales_sum", builder.field("unit_sales"))
+      )
+      .sortLimit(0, limit, builder.desc(builder.field("sales_sum")))
+      .project(builder.field("fullname"))
       .build()
   }
 }

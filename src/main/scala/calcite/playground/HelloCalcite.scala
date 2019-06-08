@@ -2,7 +2,7 @@ package calcite.playground
 
 import java.sql.ResultSet
 
-object HelloCalcite extends App with CalciteHelpers with FoodMartQueries {
+object HelloCalcite extends App with CalciteHelpers {
   private def printRows(res: ResultSet) = {
     val columnCount = res.getMetaData.getColumnCount
     while(res.next()) {
@@ -12,8 +12,17 @@ object HelloCalcite extends App with CalciteHelpers with FoodMartQueries {
   }
 
   withFoodmart{ context =>
-    val customers = sumInCity(context.schema, "Albany")
+    val queryFactory = new FoodMartQueries(context.schema)
 
-    context.executeQuery(customers)(printRows)
+    val queries = Seq(
+      queryFactory.sumInCity("Albany"),
+      queryFactory.drillInCity("Albany"),
+      queryFactory.topInCity("Albany", 5)
+    )
+
+    queries.foreach{ q =>
+      context.executeQuery(q)(printRows)
+      println("--")
+    }
   }
 }
