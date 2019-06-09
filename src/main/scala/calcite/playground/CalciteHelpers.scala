@@ -11,12 +11,8 @@ import org.apache.calcite.rel.RelNode
 import org.apache.calcite.schema.SchemaPlus
 
 trait CalciteHelpers {
-  case class Context(schema: SchemaPlus, connection: CalciteConnection) {
-    def executeQuery[T](query: RelNode)(action: ResultSet => T): T = executeRelQuery(connection, query)(action)
-  }
-
-  def addPgSchema(conn: CalciteConnection, conf: PgConfig): SchemaPlus = {
-    Class.forName("org.postgresql.Driver")
+  def addJdbcSchema(conn: CalciteConnection, conf: SourceDBConfig): SchemaPlus = {
+    Class.forName(conf.jdbcDriver)
 
     val schemaName = conf.calciteSchemaName
     val rootSchema = conn.getRootSchema
@@ -25,12 +21,13 @@ trait CalciteHelpers {
     rootSchema.getSubSchema(schemaName)
   }
 
-  def executeRelQuery[T](conn: CalciteConnection, query: RelNode)(action: ResultSet => T): T =
+  def executeRelQuery[T](conn: CalciteConnection, query: RelNode)(action: ResultSet => T): T = {
     prepareRelQuery(conn, query).flatMap { statement =>
       executePrepared(statement)
-    }.use{ resultSet =>
+    }.use { resultSet =>
       IO(action(resultSet))
     }.unsafeRunSync()
+  }
 
   def withCalciteConnection[T](action: CalciteConnection => T): T = {
     Class.forName("org.apache.calcite.jdbc.Driver")
@@ -39,15 +36,6 @@ trait CalciteHelpers {
       IO(action(calciteConn))
     }.unsafeRunSync()
   }
-
-  def withFoodmart[T](action: Context => T): T =
-    withCalciteConnection { conn =>
-      import com.typesafe.config.ConfigFactory
-
-      val pgConf = PgConfig.load(ConfigFactory.load())
-      val schema = addPgSchema(conn, pgConf)
-      action(Context(schema, conn))
-    }
 
   private def prepareRelQuery(calciteConnection: CalciteConnection, query: RelNode) = {
     val prepareCtx = calciteConnection.createPrepareContext()

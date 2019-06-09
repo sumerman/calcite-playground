@@ -51,11 +51,11 @@ class FoodMartQueries(schema: SchemaPlus) {
       .push(withTimes)
       .join(JoinRelType.INNER, "customer_id")
       .aggregate(
-        builder.groupKey("month_of_year"),
+        builder.groupKey("month_of_year", "the_month"),
         builder.sum(false, "sales_sum", builder.field("unit_sales"))
       )
-      .sort(builder.field("month_of_year"))
-      .project(builder.field("month_of_year"), builder.field("sales_sum"))
+      .project(builder.field("month_of_year"), builder.field("the_month"), builder.field("sales_sum"))
+      .sort(builder.field(0))
       .build()
   }
 
